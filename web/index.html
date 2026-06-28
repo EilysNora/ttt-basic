@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tic-Tac-Toe (HTTP)</title>
+<style>
+  body { font-family: sans-serif; text-align: center; margin-top: 40px; }
+  #board { display: inline-grid; gap: 4px; margin: 20px auto; }
+  .cell {
+    width: 60px; height: 60px;
+    font-size: 24px; font-weight: bold;
+    cursor: pointer;
+  }
+  .cell:disabled { cursor: default; }
+  #message { font-size: 18px; min-height: 24px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Tic-Tac-Toe (HTTP)</h1>
+  <button id="newGameBtn">New Game</button>
+  <div id="board"></div>
+  <div id="message"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
