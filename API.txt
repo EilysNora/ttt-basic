@@ -1,0 +1,78 @@
+Tic-Tac-Toe Web API
+===================
+
+Base path: the context path where the WAR is deployed, e.g. http://localhost:8080/tictactoe/
+All endpoints return Content-Type: application/json; charset=UTF-8.
+
+Game state is kept server-side in the HTTP session (JSESSIONID cookie set by the
+container) - no game id needs to be passed by the client.
+
+Board layout (3x3, 9 cells numbered 1-9, left to right, top to bottom):
+  1 | 2 | 3
+  4 | 5 | 6
+  7 | 8 | 9
+
+"board" in the responses is an array of 9 ints, index 0 = cell 1, ... index 8 = cell 9.
+Cell values: 0 = empty, 1 = human player (X), 2 = computer (O).
+The computer always plays the first free cell, scanning left to right, top to bottom.
+
+
+1) POST /api/newgame
+   Starts a new game for the current session (creates a new session if none exists yet).
+
+   Request body: (none)
+
+   Response body (200 OK):
+   {
+     "board": [0,0,0,0,0,0,0,0,0],
+     "size": 9,
+     "status": "IN_PROGRESS",
+     "message": "Player#1: choose a cell (1-9)."
+   }
+
+
+2) POST /api/move
+   Plays the given cell for the human player, then - if the game isn't over yet -
+   lets the computer play automatically. Returns the resulting board state.
+
+   Request body:
+   { "cell": <integer, 1-9> }
+
+   Response body (200 OK):
+   {
+     "board": [1,0,0,0,2,0,0,0,0],
+     "size": 9,
+     "status": "IN_PROGRESS" | "HUMAN_WINS" | "COMPUTER_WINS" | "DRAW",
+     "message": "Player#1 played cell 1. Computer played cell 5."
+   }
+
+   Error responses:
+   404 Not Found
+     { "error": "no active game, start a new game first" }
+     -> no game exists yet in this session (call /api/newgame first)
+
+   409 Conflict
+     { "error": "game already finished" }
+     -> a move was submitted after the game already ended
+
+   400 Bad Request
+     { "error": "cell <n> is not available" }
+     -> cell is out of range (not 1-9) or already occupied
+
+   400 Bad Request
+     { "error": "request body must be JSON like {\"cell\": <1-9>}" }
+     -> request body missing/not valid JSON, or missing the "cell" field
+
+
+3) GET /api/state
+   Returns the current state of the game bound to the session, without making any move.
+   Useful to restore the board after a page reload.
+
+   Request body: (none)
+
+   Response body (200 OK): same shape as /api/newgame and /api/move.
+
+   Error response:
+   404 Not Found
+     { "error": "no active game" }
+     -> no game exists yet in this session

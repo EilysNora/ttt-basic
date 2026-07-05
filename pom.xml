@@ -8,7 +8,7 @@
   <groupId>com.tictactoe</groupId>
   <artifactId>tictactoe-flex</artifactId>
   <version>1.0</version>
-  <packaging>jar</packaging>
+  <packaging>war</packaging>
 
   <properties>
     <maven.compiler.source>17</maven.compiler.source>
@@ -27,9 +27,17 @@
       <artifactId>json</artifactId>
       <version>20240303</version>
     </dependency>
+    <!-- Full Jakarta EE 11 API Web Profile (Tomcat 10+, jakarta.servlet namespace) -->
+    <dependency>
+      <groupId>jakarta.platform</groupId>
+      <artifactId>jakarta.jakartaee-web-api</artifactId>
+      <version>11.0.0</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
+    <finalName>tictactoe</finalName>
     <plugins>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -49,15 +57,10 @@
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.3.0</version>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
         <configuration>
-          <archive>
-            <manifest>
-              <mainClass>com.tictactoe.Main</mainClass>
-            </manifest>
-          </archive>
-          <finalName>tictactoe-flex</finalName>
+          <failOnMissingWebXml>false</failOnMissingWebXml>
         </configuration>
       </plugin>
       <plugin>

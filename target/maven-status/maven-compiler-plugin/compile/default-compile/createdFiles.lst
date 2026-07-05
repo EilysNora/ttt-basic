@@ -1,6 +1,7 @@
 com\tictactoe\Humanplayer.class
 com\tictactoe\Game.class
 com\tictactoe\Board.class
+com\tictactoe\web\MoveServlet.class
 com\tictactoe\HttpServer.class
 com\tictactoe\HttpClient.class
 com\tictactoe\Player.class
@@ -10,7 +11,11 @@ com\tictactoe\NioServer$GameSession.class
 com\tictactoe\Squareboard.class
 com\tictactoe\NioServer.class
 com\tictactoe\Server.class
+com\tictactoe\web\StateServlet.class
 com\tictactoe\Computerplayer.class
+com\tictactoe\web\GameState.class
+com\tictactoe\web\NewGameServlet.class
+com\tictactoe\web\JsonUtil.class
 com\tictactoe\Client.class
 com\tictactoe\HttpServer$GameSession.class
 com\tictactoe\Main.class

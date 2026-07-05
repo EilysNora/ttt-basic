@@ -103,7 +103,7 @@ public class HttpServer {
         session.message = msg.toString();
         sendJson(exchange, 200, sessionJson(id, session));
     }
-
+    
     private static void handleBoard(HttpExchange exchange, Map<Integer, GameSession> games) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             sendJson(exchange, 405, error("method not allowed"));
