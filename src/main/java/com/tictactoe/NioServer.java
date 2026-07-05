@@ -7,140 +7,113 @@ import java.nio.channels.*;
 import java.nio.charset.*;
 import java.util.Iterator;
 
+/**
+ * A stateless NIO server for the tic-tac-toe game: every move is a brand-new
+ * connection carrying the whole board state, processed and replied to, then closed.
+ */
 public class NioServer {
     private static final int PORT = 12345;
     private static final Charset UTF8 = StandardCharsets.UTF_8;
+    private static final int HUMAN_SYMBOL = 1;
+    private static final String HUMAN_NAME = "Player#1";
 
+    /**
+     * Main method to start the server and listen for client connections.
+     * @param args
+     * @throws IOException
+     */
     public static void main(String[] args) throws IOException {
+        // set up selector and non-blocking server channel
         Selector selector = Selector.open();
-        ServerSocketChannel serverChannel = ServerSocketChannel.open();
-        serverChannel.bind(new InetSocketAddress(PORT));
-        serverChannel.configureBlocking(false);
-        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
-        System.out.println("NIO Server (no threads) started on port " + PORT + "...");
+        ServerSocketChannel server = ServerSocketChannel.open();
+        server.bind(new InetSocketAddress(PORT));
+        server.configureBlocking(false);
+        server.register(selector, SelectionKey.OP_ACCEPT);
+        System.out.println("Server started on port " + PORT);
 
+        // event loop: block until something is ready, then handle it
         while (true) {
             selector.select();
-            Iterator<SelectionKey> iter = selector.selectedKeys().iterator();
-            while (iter.hasNext()) {
-                SelectionKey key = iter.next();
-                iter.remove();
-                if (!key.isValid()) continue;
-                if (key.isAcceptable()) accept(key, selector);
-                else if (key.isReadable()) read(key);
+            Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+            while (it.hasNext()) {
+                SelectionKey key = it.next();
+                it.remove();
+                if (key.isAcceptable()) {
+                    // a new client wants to connect
+                    SocketChannel client = ((ServerSocketChannel) key.channel()).accept();
+                    client.configureBlocking(false);
+                    client.register(selector, SelectionKey.OP_READ);
+                } else if (key.isReadable()) {
+                    // a client sent its request; handle it and close (stateless, no keep-alive)
+                    SocketChannel ch = (SocketChannel) key.channel();
+                    try { handle(ch); } catch (IOException ignored) {}
+                    ch.close();
+                    key.cancel();
+                }
             }
         }
     }
 
-    private static void accept(SelectionKey key, Selector selector) throws IOException {
-        SocketChannel client = ((ServerSocketChannel) key.channel()).accept();
-        client.configureBlocking(false);
-        GameSession session = new GameSession();
-        client.register(selector, SelectionKey.OP_READ, session);
-        System.out.println("Player connected: " + client.getRemoteAddress());
-        session.greet(client);
-    }
-
-    private static void read(SelectionKey key) {
-        SocketChannel channel = (SocketChannel) key.channel();
-        GameSession session = (GameSession) key.attachment();
+    /**
+     * Handles one client request: rebuild the board, apply the move, check and then reply.
+     * @param ch
+     * @throws IOException
+     */
+    private static void handle(SocketChannel ch) throws IOException {
+        // read the request: line 1 is the board state, line 2 is the move
         ByteBuffer buf = ByteBuffer.allocate(256);
-        try {
-            int n = channel.read(buf);
-            if (n == -1) { close(key); return; }
-            buf.flip();
-            session.receive(UTF8.decode(buf).toString(), channel);
-        } catch (IOException e) {
-            close(key);
-        }
-    }
+        ch.read(buf);
+        buf.flip();
+        String[] lines = UTF8.decode(buf).toString().split("\n", 2);
+        String state = lines[0].trim();
+        String move = lines.length > 1 ? lines[1].trim() : "";
 
-    private static void close(SelectionKey key) {
-        try { key.channel().close(); } catch (IOException ignored) {}
-        key.cancel();
-    }
+        // rebuild the board from the client's state string (no state kept on the server itself)
+        Board board = GameConfig.createBoard();
+        if (!state.isEmpty() && !state.equalsIgnoreCase("NEW")) board.loadState(state);
+        Player computer = GameConfig.createPlayer2();
+        StringBuilder out = new StringBuilder();
 
-    static class GameSession {
-        private final Board board = GameConfig.createBoard();
-        private final Player computer = GameConfig.createPlayer2();
-        private final StringBuilder inputBuf = new StringBuilder();
-        private static final int HUMAN_SYMBOL = 1;
-        private static final String HUMAN_NAME = "Player#1";
-
-        void greet(SocketChannel ch) throws IOException {
-            send(ch, "Welcome to TicTacToe!\n");
-            sendBoard(ch);
-            send(ch, HUMAN_NAME + " enter cell: ");
-        }
-
-        void receive(String data, SocketChannel ch) throws IOException {
-            inputBuf.append(data);
-            String line;
-            while ((line = nextLine()) != null) {
-                processMove(line, ch);
-            }
-        }
-
-        private String nextLine() {
-            int idx = inputBuf.indexOf("\n");
-            if (idx == -1) return null;
-            String line = inputBuf.substring(0, idx).replace("\r", "").trim();
-            inputBuf.delete(0, idx + 1);
-            return line;
-        }
-
-        private void processMove(String input, SocketChannel ch) throws IOException {
-            int cell;
-            try {
-                cell = Integer.parseInt(input);
-            } catch (NumberFormatException e) {
-                send(ch, "Invalid input. Enter a number 1-" + board.getSize() + ".\n");
-                send(ch, HUMAN_NAME + " enter cell: ");
-                return;
-            }
-
-            if (!board.isValidMove(cell)) {
-                send(ch, cell + " not available\n");
-                send(ch, HUMAN_NAME + " enter cell: ");
-                return;
-            }
-
+        // check if the client wants to quit
+        if (move.equalsIgnoreCase("quit")) {
+            out.append("Bye!\n");
+        } else if (!isNumber(move) || !board.isValidMove(Integer.parseInt(move))) {
+            // not a number, or the cell is out of range / already taken
+            out.append(move).append(" not available\n").append(HUMAN_NAME).append(" enter cell: ");
+        } else {
+            // place player move, then check winner, continue if not
+            int cell = Integer.parseInt(move);
             board.place(cell, HUMAN_SYMBOL);
-            send(ch, "  " + HUMAN_NAME + " turn at cell " + cell + ".\n");
-            sendBoard(ch);
-            if (checkEnd(ch, HUMAN_NAME)) return;
-
-            int comp = computer.chooseCell(board);
-            board.place(comp, computer.getSymbol());
-            send(ch, "  " + computer.getName() + " turn at cell " + comp + ".\n");
-            sendBoard(ch);
-            if (checkEnd(ch, computer.getName())) return;
-
-            send(ch, HUMAN_NAME + " enter cell: ");
-        }
-
-        private boolean checkEnd(SocketChannel ch, String lastPlayer) throws IOException {
-            if (board.isWon()) {
-                send(ch, lastPlayer + " wins!\n");
-                ch.close();
-                return true;
+            out.append("  ").append(HUMAN_NAME).append(" turn at cell ").append(cell).append(".\n");
+            show(out, board);
+            if (!end(out, board, HUMAN_NAME)) {
+                // computer's turn
+                int comp = computer.chooseCell(board);
+                board.place(comp, computer.getSymbol());
+                out.append("  ").append(computer.getName()).append(" turn at cell ").append(comp).append(".\n");
+                show(out, board);
+                if (!end(out, board, computer.getName()))
+                    out.append(HUMAN_NAME).append(" enter cell: ");
             }
-            if (board.isFull()) {
-                send(ch, "It's a draw!\n");
-                ch.close();
-                return true;
-            }
-            return false;
         }
+        // reply: line 1 = new board state for the client to resend next time, rest = text to print
+        ch.write(UTF8.encode(board.networkString() + "\n" + out));
+    }
 
-        private void sendBoard(SocketChannel ch) throws IOException {
-            StringWriter sw = new StringWriter();
-            board.display(new PrintWriter(sw, true));
-            send(ch, sw.toString());
-        }
+    // this is me again, get tired of writing long if else so I create a helper
+    private static boolean isNumber(String s) {
+        try { Integer.parseInt(s); return true; } catch (NumberFormatException e) { return false; }
+    }
 
-        private void send(SocketChannel ch, String msg) throws IOException {
-            ch.write(UTF8.encode(msg));
-        }
+    private static boolean end(StringBuilder out, Board board, String who) {
+        if (board.isWon()) { out.append(who).append(" wins!\n"); return true; }
+        if (board.isFull()) { out.append("It's a draw!\n"); return true; }
+        return false;
+    }
+
+    private static void show(StringBuilder out, Board board) {
+        StringWriter sw = new StringWriter();
+        board.display(new PrintWriter(sw, true));
+        out.append(sw);
     }
 }

@@ -1,9 +1,7 @@
 
 1) POST /api/newgame
-   Starts a new game for the current session (creates a new session if none exists yet).
-
+   Starts a new game.
    Request body: (none)
-
    Response body (200 OK):
    {
      "board": [0,0,0,0,0,0,0,0,0],
@@ -19,7 +17,6 @@
 
    Request body:
    { "cell": <integer, 1-9> }
-
    Response body (200 OK):
    {
      "board": [1,0,0,0,2,0,0,0,0],
@@ -45,16 +42,3 @@
      { "error": "request body must be JSON like {\"cell\": <1-9>}" }
      -> request body missing/not valid JSON, or missing the "cell" field
 
-
-3) GET /api/state
-   Returns the current state of the game bound to the session, without making any move.
-   Useful to restore the board after a page reload.
-
-   Request body: (none)
-
-   Response body (200 OK): same shape as /api/newgame and /api/move.
-
-   Error response:
-   404 Not Found
-     { "error": "no active game" }
-     -> no game exists yet in this session

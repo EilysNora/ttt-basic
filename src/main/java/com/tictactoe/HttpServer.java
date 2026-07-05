@@ -1,189 +1,104 @@
 package com.tictactoe;
 
+import java.io.*;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import com.sun.net.httpserver.HttpExchange;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
+/**
+ * A stateless HTTP server for the tic-tac-toe game: every move is a plain
+ * POST /move request carrying the whole board state as a query parameter.
+ */
 public class HttpServer {
     private static final int PORT = 8000;
     private static final int HUMAN_SYMBOL = 1;
     private static final String HUMAN_NAME = "Player#1";
 
+    /**
+     * Main method to start the HTTP server and register the /move endpoint.
+     * @param args
+     * @throws IOException
+     */
     public static void main(String[] args) throws IOException {
-        Map<Integer, GameSession> games = new HashMap<>();
-        AtomicInteger nextId = new AtomicInteger(1);
-
         com.sun.net.httpserver.HttpServer server =
                 com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(PORT), 0);
-
-        server.createContext("/newgame", exchange -> handleNewGame(exchange, games, nextId));
-        server.createContext("/move", exchange -> handleMove(exchange, games));
-        server.createContext("/board", exchange -> handleBoard(exchange, games));
-
-        // No executor set => exchanges are dispatched one at a time on a single thread.
-        server.setExecutor(null);
+        server.createContext("/move", HttpServer::handle);
+        server.setExecutor(null); // no executor => requests are handled one at a time on a single thread
         server.start();
-        System.out.println("HTTP Server (single-threaded) started on port " + PORT + "...");
+        System.out.println("HTTP Server started on port " + PORT);
     }
 
-    private static void handleNewGame(HttpExchange exchange, Map<Integer, GameSession> games, AtomicInteger nextId) throws IOException {
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            sendJson(exchange, 405, error("method not allowed"));
-            return;
-        }
-        int id = nextId.getAndIncrement();
-        GameSession session = new GameSession(GameConfig.createBoard(), GameConfig.createPlayer2());
-        session.message = HUMAN_NAME + " enter cell:";
-        games.put(id, session);
-        sendJson(exchange, 200, sessionJson(id, session));
-    }
+    /**
+     * Handles one /move request: rebuild the board, apply the move, check and then reply.
+     * @param exchange
+     * @throws IOException
+     */
+    private static void handle(HttpExchange exchange) throws IOException {
+        // read the request: query params carry the board state and the move
+        String state = param(exchange, "state");
+        String move = param(exchange, "move");
 
-    private static void handleMove(HttpExchange exchange, Map<Integer, GameSession> games) throws IOException {
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            sendJson(exchange, 405, error("method not allowed"));
-            return;
-        }
-        Map<String, String> params = parseQuery(exchange.getRequestURI());
-        Integer id = parseInt(params.get("id"));
-        if (id == null || !games.containsKey(id)) {
-            sendJson(exchange, 404, error("no such game"));
-            return;
-        }
+        // rebuild the board from the client's state string (no state kept on the server itself)
+        Board board = GameConfig.createBoard();
+        if (!state.isEmpty() && !state.equalsIgnoreCase("NEW")) board.loadState(state);
+        Player computer = GameConfig.createPlayer2();
+        StringBuilder out = new StringBuilder();
 
-        GameSession session = games.get(id);
-        if (session.isOver()) {
-            sendJson(exchange, 410, error("game already finished"));
-            return;
-        }
-
-        Board board = session.board;
-        Integer cell = parseInt(params.get("cell"));
-        if (cell == null || !board.isValidMove(cell)) {
-            sendJson(exchange, 400, error(params.get("cell") + " not available"));
-            return;
-        }
-
-        board.place(cell, HUMAN_SYMBOL);
-        StringBuilder msg = new StringBuilder("  " + HUMAN_NAME + " turn at cell " + cell + ".");
-
-        if (board.isWon()) {
-            session.status = "HUMAN_WINS";
-            msg.append(" ").append(HUMAN_NAME).append(" wins!");
-        } else if (board.isFull()) {
-            session.status = "DRAW";
-            msg.append(" It's a draw!");
+        // check if the client wants to quit
+        if (move.equalsIgnoreCase("quit")) {
+            out.append("Bye!\n");
+        } else if (!isNumber(move) || !board.isValidMove(Integer.parseInt(move))) {
+            // not a number, or the cell is out of range / already taken
+            out.append(move).append(" not available\n").append(HUMAN_NAME).append(" enter cell: ");
         } else {
-            Player computer = session.computer;
-            int comp = computer.chooseCell(board);
-            board.place(comp, computer.getSymbol());
-            msg.append("  ").append(computer.getName()).append(" turn at cell ").append(comp).append(".");
-
-            if (board.isWon()) {
-                session.status = "COMPUTER_WINS";
-                msg.append(" ").append(computer.getName()).append(" wins!");
-            } else if (board.isFull()) {
-                session.status = "DRAW";
-                msg.append(" It's a draw!");
-            } else {
-                msg.append("  ").append(HUMAN_NAME).append(" enter cell:");
+            // place player move, then check winner, continue if not
+            int cell = Integer.parseInt(move);
+            board.place(cell, HUMAN_SYMBOL);
+            out.append("  ").append(HUMAN_NAME).append(" turn at cell ").append(cell).append(".\n");
+            show(out, board);
+            if (!end(out, board, HUMAN_NAME)) {
+                // computer's turn
+                int comp = computer.chooseCell(board);
+                board.place(comp, computer.getSymbol());
+                out.append("  ").append(computer.getName()).append(" turn at cell ").append(comp).append(".\n");
+                show(out, board);
+                if (!end(out, board, computer.getName())) out.append(HUMAN_NAME).append(" enter cell: ");
             }
         }
 
-        session.message = msg.toString();
-        sendJson(exchange, 200, sessionJson(id, session));
-    }
-    
-    private static void handleBoard(HttpExchange exchange, Map<Integer, GameSession> games) throws IOException {
-        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-            sendJson(exchange, 405, error("method not allowed"));
-            return;
-        }
-        Map<String, String> params = parseQuery(exchange.getRequestURI());
-        Integer id = parseInt(params.get("id"));
-        if (id == null || !games.containsKey(id)) {
-            sendJson(exchange, 404, error("no such game"));
-            return;
-        }
-        sendJson(exchange, 200, sessionJson(id, games.get(id)));
+        // reply: line 1 = new board state for the client to resend next time, rest = text to print
+        byte[] body = (board.networkString() + "\n" + out).getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(200, body.length);
+        try (OutputStream os = exchange.getResponseBody()) { os.write(body); }
     }
 
-    private static JSONObject sessionJson(int id, GameSession session) {
-        JSONObject obj = new JSONObject();
-        obj.put("id", id);
-        obj.put("board", boardArray(session.board));
-        obj.put("size", session.board.getSize());
-        obj.put("status", session.status);
-        obj.put("message", session.message);
-        return obj;
-    }
-
-    private static JSONArray boardArray(Board board) {
-        JSONArray arr = new JSONArray();
-        for (int cell = 1; cell <= board.getSize(); cell++) arr.put(board.getCell(cell));
-        return arr;
-    }
-
-    private static JSONObject error(String message) {
-        return new JSONObject().put("error", message);
-    }
-
-    private static Map<String, String> parseQuery(URI uri) {
-        Map<String, String> params = new HashMap<>();
-        String query = uri.getRawQuery();
-        if (query == null || query.isEmpty()) return params;
+    // pulls a single "key=value" pair out of the request's raw query string
+    private static String param(HttpExchange exchange, String key) {
+        String query = exchange.getRequestURI().getRawQuery();
+        if (query == null) return "";
         for (String pair : query.split("&")) {
             int eq = pair.indexOf('=');
-            if (eq < 0) continue;
-            String key = URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8);
-            String value = URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
-            params.put(key, value);
+            if (eq > 0 && pair.substring(0, eq).equals(key)) return pair.substring(eq + 1);
         }
-        return params;
+        return "";
     }
 
-    private static Integer parseInt(String s) {
-        if (s == null) return null;
-        try {
-            return Integer.parseInt(s.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+    // true if s can be parsed as an integer (used to validate the player's raw input)
+    private static boolean isNumber(String s) {
+        try { Integer.parseInt(s); return true; } catch (NumberFormatException e) { return false; }
     }
 
-    private static void sendJson(HttpExchange exchange, int statusCode, JSONObject body) throws IOException {
-        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.sendResponseHeaders(statusCode, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(bytes);
-        }
+    // appends a win/draw message if the game just ended; returns true when it did
+    private static boolean end(StringBuilder out, Board board, String who) {
+        if (board.isWon()) { out.append(who).append(" wins!\n"); return true; }
+        if (board.isFull()) { out.append("It's a draw!\n"); return true; }
+        return false;
     }
 
-    private static class GameSession {
-        final Board board;
-        final Player computer;
-        String status = "IN_PROGRESS";
-        String message;
-
-        GameSession(Board board, Player computer) {
-            this.board = board;
-            this.computer = computer;
-        }
-
-        boolean isOver() {
-            return !"IN_PROGRESS".equals(status);
-        }
+    // renders the board to text and appends it to the reply
+    private static void show(StringBuilder out, Board board) {
+        StringWriter sw = new StringWriter();
+        board.display(new PrintWriter(sw, true));
+        out.append(sw);
     }
 }

@@ -29,6 +29,21 @@ public class Squareboard implements Board {
         return true;
     }
 
+    public String networkString(){
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= n*n; i++){
+            if (i > 1) sb.append(",");
+            sb.append(cells[i]);
+        }
+        return sb.toString();
+    }
+
+    public void loadState(String state){
+        String[] parts = state.split(",");
+        for (int i = 0; i < parts.length && i < n*n; i++)
+            cells[i + 1] = Integer.parseInt(parts[i].trim());
+    }
+
 
     //convert 2D to 1D array
     private int cellOf(int row, int col){

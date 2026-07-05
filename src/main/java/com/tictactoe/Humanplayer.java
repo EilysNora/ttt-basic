@@ -20,9 +20,11 @@ public class Humanplayer implements Player {
         this.printer = out;
         this.scanner = new Scanner(in);
     }
+
     public String getName(){
         return name;
     }
+    
     public int getSymbol(){
         return symbol;
     }
@@ -42,4 +44,5 @@ public class Humanplayer implements Player {
             }
         }
     }
+
 }

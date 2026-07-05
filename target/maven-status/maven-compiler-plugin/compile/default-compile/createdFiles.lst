@@ -7,7 +7,6 @@ com\tictactoe\HttpClient.class
 com\tictactoe\Player.class
 com\tictactoe\ServerThreadPool.class
 com\tictactoe\GameConfig.class
-com\tictactoe\NioServer$GameSession.class
 com\tictactoe\Squareboard.class
 com\tictactoe\NioServer.class
 com\tictactoe\Server.class
@@ -17,5 +16,4 @@ com\tictactoe\web\GameState.class
 com\tictactoe\web\NewGameServlet.class
 com\tictactoe\web\JsonUtil.class
 com\tictactoe\Client.class
-com\tictactoe\HttpServer$GameSession.class
 com\tictactoe\Main.class

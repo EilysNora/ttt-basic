@@ -10,4 +10,9 @@ public interface Board {
     boolean isWon();
     boolean isFull();
     void display(PrintWriter out);
+
+    /** Serializes the board cells to a comma-separated string for network transfer. */
+    String networkString();
+    /** Restores board cells previously produced by {@link #networkString()}. */
+    void loadState(String state);
 }
